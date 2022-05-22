@@ -654,38 +654,8 @@ auto RefreshRateSelector::getRankedFrameRatesLocked(const std::vector<LayerRequi
     const auto anchorGroup =
             seamedFocusedLayers > 0 ? activeMode.getGroup() : defaultMode->getGroup();
 
-    const auto selectivelyForceIdle = [&]() REQUIRES(mLock) -> RankedFrameRates {
-        ALOGV("selectivelyForceIdle(): localIsIdle: %d, hasExplicitVoteLayers: %d",
-                localIsIdle, hasExplicitVoteLayers);
-
-        if (localIsIdle && !hasExplicitVoteLayers && ranking.front().frameRateMode.fps > mIdleFps) {
-            /*
-             * We heavily rely on touch to boost higher than 60 fps.
-             * Fallback to idle fps if a higher fps was calculated.
-             */
-            auto idleRanking = rankFrameRates(activeMode.getGroup(), RefreshRateOrder::Ascending);
-            // Find the idle mode in the ranking
-            const auto it = std::find_if(idleRanking.begin(), idleRanking.end(),
-                                   [&](const ScoredFrameRate& sfr) {
-                                       return isApproxEqual(sfr.frameRateMode.fps, mIdleFps);
-                                   });
-            if (it != idleRanking.end()) {
-                idleRanking = FrameRateRanking{*it};
-                ALOGV("Forcing idle");
-            }
-            // Otherwise return the idle ranking as it is
-            ALOGV("%s scored", to_string(idleRanking.front().frameRateMode.fps).c_str());
-            return {idleRanking, GlobalSignals{.idle = true}};
-        }
-
-        // Handle the case where we don't force idle or bestRefreshRate is not available
-        ALOGV("%s scored", to_string(ranking.front().frameRateMode.fps).c_str());
-        return {ranking, kNoSignals};
-    };
-
-    // Consider the touch event if there are no Explicit* layers. Otherwise wait until after we've
-    // selected a refresh rate to see if we should apply touch boost.
-    if (signals.touch && !hasExplicitVoteLayers) {
+    // Touch boost whenever possible as we opportunistically enter idle aggressively
+    if (signals.touch) {
         ALOGV("Touch Boost");
         ranking = rankFrameRates(anchorGroup, RefreshRateOrder::Descending);
         SFTRACE_FORMAT_INSTANT("%s (Touch Boost)",
